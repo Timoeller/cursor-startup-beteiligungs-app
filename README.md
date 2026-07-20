@@ -80,6 +80,7 @@ All salaries are **annual gross** amounts (monthly salary is never used).
 | **Actual annual gross salary paid** | What the startup actually pays you per year (gross). |
 | **Startup success probability (%)** | Chance the startup succeeds and repays the deferred salary. **The only risk input.** |
 | **Expected annual investment return (%)** | Return you could earn by investing the money instead. |
+| **Number of years (deferral period)** | How many years the same reduced salary is deferred (whole number ≥ 1). Earlier years' money compounds longer. |
 
 Advanced (editable) assumptions, with sensible defaults:
 
@@ -87,7 +88,6 @@ Advanced (editable) assumptions, with sensible defaults:
 |------------|---------|---------|
 | Marginal wage/income tax | 45% | Top marginal tax rate on salary. |
 | Capital-gains tax | 25% | Tax on investment gains. |
-| Investment / deferral horizon | 1 year | How long the money would have been invested. |
 
 ---
 
@@ -98,18 +98,21 @@ Let:
 - `D`  = deferred salary = `intended_gross − actual_gross`
 - `p`  = success probability (as a fraction)
 - `r`  = annual investment return (as a fraction)
-- `n`  = horizon in years
+- `N`  = number of years the arrangement runs
 - `t_wage` = wage tax (default 0.45)
 - `t_cg`   = capital-gains tax (default 0.25)
 
-**Step 1 — Deferred salary**
+**Step 1 — Deferred salary per year, and total over `N` years**
 
 ```
-D = intended_gross − actual_gross
+D              = intended_gross − actual_gross
+total_deferred = D × N
 ```
 
-**Step 2 — Net amount a day-one earner could invest** (the benchmark colleague
-is actually paid `D`, pays wage tax, and invests the rest)
+The same amount `D` is deferred in every year of the arrangement.
+
+**Step 2 — Net amount a day-one earner could invest each year** (the benchmark
+colleague is actually paid `D` each year, pays wage tax, and invests the rest)
 
 ```
 net_invested = D × (1 − t_wage)
@@ -117,18 +120,21 @@ net_invested = D × (1 − t_wage)
 
 **Step 3 — Foregone investment gains (after capital-gains tax)**
 
+Each year's net salary compounds until the end of the arrangement, so money from
+year 1 grows for `N` years and money from the final year grows for 1 year:
+
 ```
-gain_net = net_invested × ((1 + r)^n − 1) × (1 − t_cg)
+gain_net = net_invested × Σ_{y=1..N} ((1 + r)^y − 1) × (1 − t_cg)
 ```
 
 Investment gains are taxed at the **lower** capital-gains rate (25%) rather than
 the **higher** marginal wage-tax rate (up to 45%). The tax advantage this creates
 is shown explicitly as `tax_advantage = gain_pretax × (t_wage − t_cg)`.
 
-**Step 4 — Benchmark value** (end wealth of the colleague paid on day one)
+**Step 4 — Benchmark value** (end wealth of the colleague paid each year)
 
 ```
-benchmark = net_invested + gain_net
+benchmark = (net_invested × N) + gain_net
 ```
 
 **Step 5 — Risk-compensation multiplier**
@@ -158,23 +164,33 @@ required_gross = benchmark / ( p × (1 − t_wage) )
 **Step 7 — Compensation multiple**
 
 ```
-multiple = required_gross / D
+multiple = required_gross / total_deferred
 ```
 
-With zero investment return this equals exactly `1 / p` (pure risk). Any excess
-above that is the foregone tax-advantaged investment growth.
+With zero investment return this equals exactly `1 / p` (pure risk), regardless of
+`N`. Any excess above that is the foregone tax-advantaged investment growth, which
+grows with `N` because earlier years compound longer.
 
 ### Worked example
 
-Intended `90,000`, actual `60,000`, success `20%`, return `7%`, horizon `1yr`,
+Intended `90,000`, actual `60,000`, success `20%`, return `7%`,
 wage tax `45%`, capital-gains tax `25%`:
 
-- `D = 30,000`
+**1 year:**
+
+- `D = 30,000`, `total_deferred = 30,000`
 - `net_invested = 16,500`
 - `gain_net = 866.25`, `tax_advantage = 231`
 - `benchmark = 17,366.25`
 - `risk_multiplier = 5.0`
 - **`required_gross = 157,875`  (multiple ≈ 5.26×)**
+
+**3 years:**
+
+- `total_deferred = 90,000`
+- `gain_net = 5,444.29` (year 1 compounds 3yr, year 2 2yr, year 3 1yr)
+- `benchmark = 54,944.29`
+- **`required_gross = 499,493.59`  (multiple ≈ 5.55×)**
 
 With `return = 0%` the required pay-out is exactly `150,000` (5×), matching the
 pure `1 / p` intuition.

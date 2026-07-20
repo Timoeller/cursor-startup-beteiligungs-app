@@ -21,6 +21,16 @@ pay-out must be about ``1 / p`` times larger (5x) just to break even on risk in
 expectation. On top of that, the employee loses the tax-advantaged investment
 growth they could have earned on the cash, so a further premium is required.
 
+Multiple years
+--------------
+The arrangement can run for several years. The intended and actual salary are the
+same in every year, so the employee defers the same amount ``D`` each year for
+``N`` years. The benchmark colleague invests each year's net salary; money
+deferred earlier compounds for longer (year 1 for ``N`` years, ... the final year
+for 1 year). The startup's success is resolved once, at the end, and on success
+the whole accumulated deferred compensation is repaid. With ``N = 1`` this reduces
+exactly to the single-year model.
+
 Everything here is intentionally explicit and side-effect free so the model is
 easy to read, unit-test and extend. Each step is returned as a structured record
 (label + formula + value + explanation) so the frontend can render a fully
@@ -64,7 +74,8 @@ class CalculationInputs:
     capital_gains_tax_pct:
         Capital-gains tax rate applied to investment gains, in percent.
     years:
-        Investment horizon in years of the day-one investor benchmark.
+        Number of years the reduced-salary arrangement lasts. The same amount is
+        deferred each year. Must be a whole number >= 1.
     """
 
     intended_gross: float
@@ -99,8 +110,10 @@ class CalculationInputs:
             raise ValueError("Wage tax rate must be between 0 and (below) 100 percent.")
         if not 0 <= self.capital_gains_tax_pct <= 100:
             raise ValueError("Capital-gains tax rate must be between 0 and 100 percent.")
-        if self.years < 0:
-            raise ValueError("Investment horizon (years) cannot be negative.")
+        if self.years < 1:
+            raise ValueError("Number of years must be at least 1.")
+        if abs(self.years - round(self.years)) > 1e-9:
+            raise ValueError("Number of years must be a whole number.")
 
 
 @dataclass
@@ -163,14 +176,15 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
     Returns a :class:`CalculationResult` with a headline summary and an ordered
     list of transparent steps:
 
-    1. Deferred salary (the annual shortfall).
-    2. Net amount a day-one earner could invest (after wage tax).
-    3. Foregone investment gains (net of capital-gains tax) - what the cash would
-       have grown into.
-    4. Benchmark value: the end wealth of someone paid on day one who invests.
-    5. Risk-compensation multiplier (1 / success probability).
-    6. Required gross deferred compensation (payable only on success).
-    7. Compensation multiple vs. the nominal deferred salary.
+    1. Deferred salary per year (the annual shortfall).
+    2. Total deferred salary across all years of the arrangement.
+    3. Net amount a day-one earner could invest each year (after wage tax).
+    4. Foregone investment gains (net of capital-gains tax), summed over every
+       deferral year - what the cash would have grown into.
+    5. Benchmark value: the end wealth of someone paid each year who invests.
+    6. Risk-compensation multiplier (1 / success probability).
+    7. Required gross deferred compensation (payable once, only on success).
+    8. Compensation multiple vs. the total nominal deferred salary.
     """
 
     inputs.validate()
@@ -180,16 +194,16 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
     r = inputs.annual_return_pct / 100.0
     t_wage = inputs.wage_tax_pct / 100.0
     t_cg = inputs.capital_gains_tax_pct / 100.0
-    n = inputs.years
+    n_years = int(round(inputs.years))
 
     steps: list[Step] = []
 
-    # -- Step 1: Deferred salary (gross) ----------------------------------
+    # -- Step 1: Deferred salary per year (gross) -------------------------
     deferred = inputs.intended_gross - inputs.actual_gross
     steps.append(
         Step(
             key="deferred_salary",
-            label="Deferred salary (annual, gross)",
+            label="Deferred salary per year (gross)",
             value=_money(deferred),
             formula="deferred = intended_gross - actual_gross",
             substitution=(
@@ -198,31 +212,51 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
             ),
             explanation=(
                 "The part of your intended annual gross salary that you are not "
-                "actually being paid. This is the amount treated as deferred "
-                "compensation and the basis for everything below."
+                "actually being paid. The same amount is deferred in each year of "
+                "the arrangement."
             ),
         )
     )
 
-    # -- Step 2: Net amount a day-one earner could invest -----------------
+    # -- Step 2: Total deferred salary over the arrangement ---------------
+    total_deferred = deferred * n_years
+    steps.append(
+        Step(
+            key="total_deferred_salary",
+            label=f"Total deferred salary over {n_years} year(s) (gross)",
+            value=_money(total_deferred),
+            formula="total_deferred = deferred * years",
+            substitution=f"{deferred:,.2f} x {n_years} = {total_deferred:,.2f}",
+            explanation=(
+                "The full nominal amount you defer across the whole arrangement, "
+                "before any risk or investment adjustment."
+            ),
+        )
+    )
+
+    # -- Step 3: Net amount a day-one earner could invest, per year -------
     net_deferred = deferred * (1 - t_wage)
     steps.append(
         Step(
             key="net_deferred_invested",
-            label="Net amount investable on day one (after wage tax)",
+            label="Net amount investable per year (after wage tax)",
             value=_money(net_deferred),
             formula="net_invested = deferred * (1 - wage_tax)",
             substitution=f"{deferred:,.2f} x (1 - {t_wage:.2f}) = {net_deferred:,.2f}",
             explanation=(
-                "The benchmark is a colleague who is actually paid this salary on "
-                "day one. They pay wage tax first and can invest what is left."
+                "The benchmark is a colleague who is actually paid this salary each "
+                "year. They pay wage tax first and can invest what is left."
             ),
         )
     )
 
-    # -- Step 3: Foregone investment gains (net of capital-gains tax) ------
-    growth_factor = (1 + r) ** n
-    gain_gross = net_deferred * (growth_factor - 1)
+    # -- Step 4: Foregone investment gains (net of capital-gains tax) ------
+    # Each year's net salary compounds until the end of the arrangement: money
+    # from year 1 grows for N years, from the final year for 1 year.
+    gain_gross = sum(
+        net_deferred * ((1 + r) ** (n_years - k + 1) - 1)
+        for k in range(1, n_years + 1)
+    )
     gain_net = gain_gross * (1 - t_cg)
     tax_advantage = gain_gross * (t_wage - t_cg)
     steps.append(
@@ -230,13 +264,17 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
             key="foregone_gain_net",
             label="Foregone investment gains (after capital-gains tax)",
             value=_money(gain_net),
-            formula="gain_net = net_invested * ((1 + return)^years - 1) * (1 - capital_gains_tax)",
+            formula=(
+                "gain_net = net_invested * sum_{y=1..years}((1 + return)^y - 1) "
+                "* (1 - capital_gains_tax)"
+            ),
             substitution=(
-                f"{net_deferred:,.2f} x ((1 + {r:.4f})^{n:g} - 1) x (1 - {t_cg:.2f}) "
-                f"= {gain_net:,.2f}"
+                f"{net_deferred:,.2f} x sum over {n_years} year(s) at {r:.4f} "
+                f"x (1 - {t_cg:.2f}) = {gain_net:,.2f}"
             ),
             explanation=(
-                "The investment growth the day-one earner enjoys and you give up. "
+                "The investment growth the day-one earner enjoys and you give up, "
+                "summed over every deferral year (earlier years compound longer). "
                 "Investment gains are taxed at the (lower) capital-gains rate, not "
                 "the wage-tax rate - a tax advantage of the investment route."
             ),
@@ -259,24 +297,28 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
         )
     )
 
-    # -- Step 4: Benchmark end wealth of the day-one investor -------------
-    benchmark_value = net_deferred + gain_net
+    # -- Step 5: Benchmark end wealth of the day-one investor -------------
+    total_principal = net_deferred * n_years
+    benchmark_value = total_principal + gain_net
     steps.append(
         Step(
             key="benchmark_value",
-            label="Benchmark value if paid & invested on day one",
+            label="Benchmark value if paid & invested each year",
             value=_money(benchmark_value),
-            formula="benchmark = net_invested + gain_net",
-            substitution=f"{net_deferred:,.2f} + {gain_net:,.2f} = {benchmark_value:,.2f}",
+            formula="benchmark = (net_invested * years) + gain_net",
+            substitution=(
+                f"({net_deferred:,.2f} x {n_years}) + {gain_net:,.2f} "
+                f"= {benchmark_value:,.2f}"
+            ),
             explanation=(
-                "The end wealth of the colleague who was paid on day one: their net "
-                "salary plus its after-tax investment growth. Your deferred pay-out "
-                "must be worth at least this much in expectation."
+                "The end wealth of the colleague who was paid each year: all their "
+                "net salary plus its after-tax investment growth. Your deferred "
+                "pay-out must be worth at least this much in expectation."
             ),
         )
     )
 
-    # -- Step 5: Risk-compensation multiplier ----------------------------
+    # -- Step 6: Risk-compensation multiplier ----------------------------
     risk_multiplier = 1 / p
     steps.append(
         Step(
@@ -294,7 +336,7 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
         )
     )
 
-    # -- Step 6: Required gross deferred compensation --------------------
+    # -- Step 7: Required gross deferred compensation --------------------
     # We need the expected, after-wage-tax pay-out to equal the benchmark value:
     #     p * required_gross * (1 - t_wage) = benchmark_value
     # Solving for required_gross gives the risk gross-up (1/p) and the wage-tax
@@ -319,30 +361,32 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
         )
     )
 
-    # -- Step 7: Compensation multiple vs. nominal deferred salary --------
-    compensation_multiple = required_gross / deferred if deferred else 0.0
+    # -- Step 8: Compensation multiple vs. total deferred salary ----------
+    compensation_multiple = required_gross / total_deferred if total_deferred else 0.0
     steps.append(
         Step(
             key="compensation_multiple",
-            label="Compensation multiple vs. deferred salary",
+            label="Compensation multiple vs. total deferred salary",
             value=_mult(compensation_multiple),
             unit="multiplier",
-            formula="multiple = required / deferred",
+            formula="multiple = required / total_deferred",
             substitution=(
-                f"{required_gross:,.2f} / {deferred:,.2f} = {compensation_multiple:,.4f}"
-                if deferred
+                f"{required_gross:,.2f} / {total_deferred:,.2f} = {compensation_multiple:,.4f}"
+                if total_deferred
                 else "n/a (no deferred salary)"
             ),
             explanation=(
-                "How many times the nominal deferred salary the startup must promise "
-                "to make deferral fair. Pure risk alone gives 1 / probability; the "
-                "extra above that is the foregone tax-advantaged investment growth."
+                "How many times the total nominal deferred salary the startup must "
+                "promise to make deferral fair. Pure risk alone gives 1 / probability; "
+                "the extra above that is the foregone tax-advantaged investment growth."
             ),
         )
     )
 
     summary = {
         "deferred_salary": _money(deferred),
+        "total_deferred_salary": _money(total_deferred),
+        "years": n_years,
         "net_deferred_invested": _money(net_deferred),
         "foregone_gain_net": _money(gain_net),
         "tax_advantage": _money(tax_advantage),

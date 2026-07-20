@@ -68,18 +68,23 @@ function renderSummary(data) {
     s.required_gross_compensation
   );
 
+  const yearWord = s.years === 1 ? "year" : "years";
   document.getElementById("headline-note").textContent =
-    `That is ${formatMultiplier(s.compensation_multiple)} the deferred salary of ` +
-    `${currency.format(s.deferred_salary)}, paid only if the startup succeeds.`;
+    `That is ${formatMultiplier(s.compensation_multiple)} the total deferred salary of ` +
+    `${currency.format(s.total_deferred_salary)} over ${s.years} ${yearWord}, ` +
+    `paid only if the startup succeeds.`;
 
   document.getElementById("s-deferred").textContent = currency.format(s.deferred_salary);
+  document.getElementById("s-total-label").textContent =
+    `Total deferred over ${s.years} ${yearWord} (gross)`;
+  document.getElementById("s-total").textContent = currency.format(s.total_deferred_salary);
   document.getElementById("s-risk").textContent = formatMultiplier(s.risk_multiplier);
-  document.getElementById("s-benchmark").textContent = currency.format(s.benchmark_value);
   document.getElementById("s-multiple").textContent = formatMultiplier(s.compensation_multiple);
 
   document.getElementById("c-netinvest").textContent = currency.format(s.net_deferred_invested);
   document.getElementById("c-foregone").textContent = currency.format(s.foregone_gain_net);
   document.getElementById("c-taxadv").textContent = currency.format(s.tax_advantage);
+  document.getElementById("c-benchmark").textContent = currency.format(s.benchmark_value);
 }
 
 function renderDetails(data) {

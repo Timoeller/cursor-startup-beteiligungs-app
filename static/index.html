@@ -12,9 +12,9 @@
       <h1>Deferred Salary Compensation Calculator</h1>
       <p class="app__subtitle">
         You accept a lower salary and the rest is deferred, paid only if the
-        startup succeeds. This works out the <strong>fair deferred pay-out</strong>
-        the startup must promise so the deal matches being paid on day one and
-        investing the money.
+        startup succeeds. Over one or more years, this works out the
+        <strong>fair deferred pay-out</strong> the startup must promise so the
+        deal matches being paid each year and investing the money.
       </p>
     </header>
 
@@ -65,6 +65,16 @@
             <small>Return you could earn if you invested the money instead (e.g. an index fund).</small>
           </div>
 
+          <div class="field">
+            <label for="years">Number of years (deferral period)</label>
+            <div class="input-wrap">
+              <input type="number" id="years" name="years"
+                     min="1" step="1" value="1" required />
+              <span class="input-suffix">yr</span>
+            </div>
+            <small>How many years the same reduced salary is deferred. Earlier years' money compounds longer.</small>
+          </div>
+
           <details class="assumptions-editor">
             <summary>Advanced assumptions</summary>
             <div class="field">
@@ -84,15 +94,6 @@
                 <span class="input-suffix">%</span>
               </div>
               <small>Tax on investment gains (default 25%).</small>
-            </div>
-            <div class="field">
-              <label for="years">Investment / deferral horizon</label>
-              <div class="input-wrap">
-                <input type="number" id="years" name="years"
-                       min="0" step="1" value="1" />
-                <span class="input-suffix">yr</span>
-              </div>
-              <small>How long the money would have been invested (years).</small>
             </div>
           </details>
 
@@ -120,16 +121,16 @@
 
           <div class="summary-grid">
             <div class="stat card">
-              <span class="stat__label">Deferred salary (annual, gross)</span>
+              <span class="stat__label">Deferred salary / year (gross)</span>
               <span id="s-deferred" class="stat__value">—</span>
+            </div>
+            <div class="stat card">
+              <span id="s-total-label" class="stat__label">Total deferred (gross)</span>
+              <span id="s-total" class="stat__value">—</span>
             </div>
             <div class="stat card">
               <span class="stat__label">Risk multiplier (1 / success)</span>
               <span id="s-risk" class="stat__value">—</span>
-            </div>
-            <div class="stat card">
-              <span class="stat__label">Benchmark value if invested day one</span>
-              <span id="s-benchmark" class="stat__value">—</span>
             </div>
             <div class="stat card">
               <span class="stat__label">Compensation multiple</span>
@@ -140,7 +141,7 @@
           <div class="card compare">
             <h3 class="card__title">Where the number comes from</h3>
             <div class="compare__row">
-              <span>Net amount investable on day one (after wage tax)</span>
+              <span>Net amount investable per year (after wage tax)</span>
               <strong id="c-netinvest">—</strong>
             </div>
             <div class="compare__row">
@@ -150,6 +151,10 @@
             <div class="compare__row">
               <span>Tax advantage of gains vs. salary</span>
               <strong id="c-taxadv">—</strong>
+            </div>
+            <div class="compare__row">
+              <span>Benchmark value if paid &amp; invested each year</span>
+              <strong id="c-benchmark">—</strong>
             </div>
           </div>
         </div>
