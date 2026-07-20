@@ -52,27 +52,34 @@ function signedClass(value) {
   return value >= 0 ? "value-positive" : "value-negative";
 }
 
+function formatMultiplier(value) {
+  return `${value.toFixed(2)}×`;
+}
+
+function formatByUnit(value, unit) {
+  return unit === "multiplier" ? formatMultiplier(value) : currencyPrecise.format(value);
+}
+
 /* --------------------------- Rendering -------------------------- */
 function renderSummary(data) {
   const s = data.summary;
 
-  const headlineValue = document.getElementById("headline-value");
-  headlineValue.textContent = currencyPrecise.format(s.final_economic_value);
+  document.getElementById("headline-value").textContent = currencyPrecise.format(
+    s.required_gross_compensation
+  );
 
-  const note = document.getElementById("headline-note");
-  if (s.favourable) {
-    note.textContent = "Deferring is favourable versus taking the cash and investing it.";
-  } else {
-    note.textContent = "Deferring costs you money versus taking the cash and investing it.";
-  }
+  document.getElementById("headline-note").textContent =
+    `That is ${formatMultiplier(s.compensation_multiple)} the deferred salary of ` +
+    `${currency.format(s.deferred_salary)}, paid only if the startup succeeds.`;
 
   document.getElementById("s-deferred").textContent = currency.format(s.deferred_salary);
-  document.getElementById("s-risk").textContent = currency.format(s.risk_adjusted_value);
-  document.getElementById("s-foregone").textContent = currency.format(s.foregone_gain_gross);
-  document.getElementById("s-taxeffect").textContent = currency.format(s.foregone_gain_net);
+  document.getElementById("s-risk").textContent = formatMultiplier(s.risk_multiplier);
+  document.getElementById("s-benchmark").textContent = currency.format(s.benchmark_value);
+  document.getElementById("s-multiple").textContent = formatMultiplier(s.compensation_multiple);
 
-  document.getElementById("c-cash").textContent = currency.format(s.value_take_cash);
-  document.getElementById("c-defer").textContent = currency.format(s.value_defer);
+  document.getElementById("c-netinvest").textContent = currency.format(s.net_deferred_invested);
+  document.getElementById("c-foregone").textContent = currency.format(s.foregone_gain_net);
+  document.getElementById("c-taxadv").textContent = currency.format(s.tax_advantage);
 }
 
 function renderDetails(data) {
@@ -80,7 +87,7 @@ function renderDetails(data) {
   list.innerHTML = "";
   data.steps.forEach((step) => {
     const li = document.createElement("li");
-    const value = currencyPrecise.format(step.value);
+    const value = formatByUnit(step.value, step.unit);
     li.innerHTML = `
       <div class="step__head">
         <span class="step__label">${escapeHtml(step.label)}</span>

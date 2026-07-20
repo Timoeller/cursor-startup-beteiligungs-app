@@ -9,10 +9,12 @@
 <body>
   <div class="app">
     <header class="app__header">
-      <h1>Deferred Salary Value Calculator</h1>
+      <h1>Deferred Salary Compensation Calculator</h1>
       <p class="app__subtitle">
-        Estimate the real, employee-side economic value of unpaid startup salary
-        that is deferred as compensation instead of paid out today.
+        You accept a lower salary and the rest is deferred, paid only if the
+        startup succeeds. This works out the <strong>fair deferred pay-out</strong>
+        the startup must promise so the deal matches being paid on day one and
+        investing the money.
       </p>
     </header>
 
@@ -47,10 +49,10 @@
             <label for="success_probability_pct">Startup success probability</label>
             <div class="input-wrap">
               <input type="number" id="success_probability_pct" name="success_probability_pct"
-                     min="0" max="100" step="1" value="30" required />
+                     min="1" max="100" step="1" value="20" required />
               <span class="input-suffix">%</span>
             </div>
-            <small>Chance the startup succeeds and repays the deferred salary. The only risk input.</small>
+            <small>Chance the startup succeeds and pays the deferred salary. The only risk input. Lower odds require a larger pay-out (20% &rarr; 5&times;).</small>
           </div>
 
           <div class="field">
@@ -111,39 +113,43 @@
         <!-- Summary view -->
         <div id="tab-summary" class="tab-panel is-active" role="tabpanel">
           <div class="headline card">
-            <span class="headline__label">Final estimated economic value of deferring</span>
+            <span class="headline__label">Required deferred compensation (gross, paid on success)</span>
             <span id="headline-value" class="headline__value">—</span>
             <span id="headline-note" class="headline__note"></span>
           </div>
 
           <div class="summary-grid">
             <div class="stat card">
-              <span class="stat__label">Deferred salary</span>
+              <span class="stat__label">Deferred salary (annual, gross)</span>
               <span id="s-deferred" class="stat__value">—</span>
             </div>
             <div class="stat card">
-              <span class="stat__label">Risk-adjusted expected value</span>
+              <span class="stat__label">Risk multiplier (1 / success)</span>
               <span id="s-risk" class="stat__value">—</span>
             </div>
             <div class="stat card">
-              <span class="stat__label">Foregone investment gains</span>
-              <span id="s-foregone" class="stat__value">—</span>
+              <span class="stat__label">Benchmark value if invested day one</span>
+              <span id="s-benchmark" class="stat__value">—</span>
             </div>
             <div class="stat card">
-              <span class="stat__label">Tax-adjusted investment effect</span>
-              <span id="s-taxeffect" class="stat__value">—</span>
+              <span class="stat__label">Compensation multiple</span>
+              <span id="s-multiple" class="stat__value">—</span>
             </div>
           </div>
 
           <div class="card compare">
-            <h3 class="card__title">Take the cash vs. defer</h3>
+            <h3 class="card__title">Where the number comes from</h3>
             <div class="compare__row">
-              <span>Take the cash &amp; invest (World A)</span>
-              <strong id="c-cash">—</strong>
+              <span>Net amount investable on day one (after wage tax)</span>
+              <strong id="c-netinvest">—</strong>
             </div>
             <div class="compare__row">
-              <span>Defer the salary (World B)</span>
-              <strong id="c-defer">—</strong>
+              <span>Foregone investment gains (after capital-gains tax)</span>
+              <strong id="c-foregone">—</strong>
+            </div>
+            <div class="compare__row">
+              <span>Tax advantage of gains vs. salary</span>
+              <strong id="c-taxadv">—</strong>
             </div>
           </div>
         </div>

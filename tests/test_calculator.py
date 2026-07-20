@@ -1,6 +1,5 @@
-"""Unit tests for the deferred-salary economic-value model."""
+"""Unit tests for the deferred-salary "required compensation" model."""
 
-import math
 import unittest
 
 from app.calculator import CalculationInputs, calculate
@@ -11,7 +10,7 @@ class CalculatorTests(unittest.TestCase):
         params = dict(
             intended_gross=90000,
             actual_gross=60000,
-            success_probability_pct=30,
+            success_probability_pct=20,
             annual_return_pct=7,
             wage_tax_pct=45,
             capital_gains_tax_pct=25,
@@ -24,69 +23,79 @@ class CalculatorTests(unittest.TestCase):
         result = calculate(self._base_inputs())
         self.assertAlmostEqual(result.summary["deferred_salary"], 30000.0)
 
-    def test_risk_adjustment(self):
-        result = calculate(self._base_inputs(success_probability_pct=30))
-        # 30000 * 0.30 = 9000
-        self.assertAlmostEqual(result.summary["risk_adjusted_value"], 9000.0)
-
-    def test_foregone_gain_gross(self):
+    def test_net_deferred_invested(self):
         result = calculate(self._base_inputs())
-        # net deferred = 30000 * (1 - 0.45) = 16500
-        # gain = 16500 * ((1.07)^1 - 1) = 16500 * 0.07 = 1155
-        self.assertAlmostEqual(result.summary["foregone_gain_gross"], 1155.0, places=2)
+        # 30000 * (1 - 0.45) = 16500
+        self.assertAlmostEqual(result.summary["net_deferred_invested"], 16500.0)
 
     def test_foregone_gain_net_and_tax_advantage(self):
         result = calculate(self._base_inputs())
-        # net gain = 1155 * (1 - 0.25) = 866.25
+        # pre-tax gain = 16500 * 0.07 = 1155; net = 1155 * 0.75 = 866.25
         self.assertAlmostEqual(result.summary["foregone_gain_net"], 866.25, places=2)
         # tax advantage = 1155 * (0.45 - 0.25) = 231
         self.assertAlmostEqual(result.summary["tax_advantage"], 231.0, places=2)
 
-    def test_value_take_cash(self):
+    def test_benchmark_value(self):
         result = calculate(self._base_inputs())
         # 16500 + 866.25 = 17366.25
-        self.assertAlmostEqual(result.summary["value_take_cash"], 17366.25, places=2)
+        self.assertAlmostEqual(result.summary["benchmark_value"], 17366.25, places=2)
 
-    def test_value_defer(self):
-        result = calculate(self._base_inputs())
-        # risk adjusted 9000 * (1 - 0.45) = 4950
-        self.assertAlmostEqual(result.summary["value_defer"], 4950.0, places=2)
+    def test_risk_multiplier_is_one_over_p(self):
+        result = calculate(self._base_inputs(success_probability_pct=20))
+        self.assertAlmostEqual(result.summary["risk_multiplier"], 5.0, places=4)
 
-    def test_final_value(self):
+    def test_required_gross_compensation(self):
         result = calculate(self._base_inputs())
-        # 4950 - 17366.25 = -12416.25
+        # benchmark / (p * (1 - wage)) = 17366.25 / (0.20 * 0.55) = 157875
         self.assertAlmostEqual(
-            result.summary["final_economic_value"], -12416.25, places=2
+            result.summary["required_gross_compensation"], 157875.0, places=2
         )
-        self.assertFalse(result.summary["favourable"])
+
+    def test_compensation_multiple(self):
+        result = calculate(self._base_inputs())
+        # 157875 / 30000 = 5.2625
+        self.assertAlmostEqual(
+            result.summary["compensation_multiple"], 5.2625, places=4
+        )
+
+    def test_pure_risk_multiple_when_no_growth(self):
+        # With zero return there is no investment premium, so the multiple is
+        # exactly 1 / probability (the user's "5x for 20%" intuition).
+        result = calculate(
+            self._base_inputs(success_probability_pct=20, annual_return_pct=0)
+        )
+        self.assertAlmostEqual(result.summary["compensation_multiple"], 5.0, places=4)
+        self.assertAlmostEqual(
+            result.summary["required_gross_compensation"], 150000.0, places=2
+        )
+
+    def test_fairness_identity(self):
+        # By construction: expected after-tax pay-out == benchmark value.
+        result = calculate(self._base_inputs(success_probability_pct=35, annual_return_pct=9, years=4))
+        s = result.summary
+        p = 0.35
+        wage = 0.45
+        expected_net_payout = p * s["required_gross_compensation"] * (1 - wage)
+        self.assertAlmostEqual(expected_net_payout, s["benchmark_value"], places=2)
 
     def test_multi_year_compounding(self):
         result = calculate(self._base_inputs(annual_return_pct=10, years=3))
-        net_deferred = 30000 * (1 - 0.45)
-        expected_gain = net_deferred * ((1.10 ** 3) - 1)
-        self.assertAlmostEqual(
-            result.summary["foregone_gain_gross"], round(expected_gain, 2), places=2
-        )
-
-    def test_high_success_can_be_favourable(self):
-        # With near-certain success and no investment return, deferring roughly
-        # breaks even / turns favourable.
-        result = calculate(
-            self._base_inputs(success_probability_pct=100, annual_return_pct=0)
-        )
-        self.assertTrue(result.summary["favourable"])
-        self.assertAlmostEqual(result.summary["final_economic_value"], 0.0, places=2)
+        net = 30000 * (1 - 0.45)
+        gain_net = net * ((1.10 ** 3) - 1) * (1 - 0.25)
+        self.assertAlmostEqual(result.summary["foregone_gain_net"], round(gain_net, 2), places=2)
 
     def test_steps_present_and_ordered(self):
         result = calculate(self._base_inputs())
         keys = [s.key for s in result.steps]
         for expected in [
             "deferred_salary",
-            "risk_adjusted_value",
-            "foregone_gain_gross",
+            "net_deferred_invested",
             "foregone_gain_net",
             "tax_advantage",
-            "final_economic_value",
+            "benchmark_value",
+            "risk_multiplier",
+            "required_gross_compensation",
+            "compensation_multiple",
         ]:
             self.assertIn(expected, keys)
 
@@ -94,14 +103,13 @@ class CalculatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate(self._base_inputs(intended_gross=50000, actual_gross=60000))
 
+    def test_validation_probability_zero(self):
+        with self.assertRaises(ValueError):
+            calculate(self._base_inputs(success_probability_pct=0))
+
     def test_validation_probability_range(self):
         with self.assertRaises(ValueError):
             calculate(self._base_inputs(success_probability_pct=150))
-
-    def test_zero_deferred(self):
-        result = calculate(self._base_inputs(intended_gross=60000, actual_gross=60000))
-        self.assertEqual(result.summary["deferred_salary"], 0.0)
-        self.assertEqual(result.summary["foregone_gain_gross"], 0.0)
 
 
 if __name__ == "__main__":

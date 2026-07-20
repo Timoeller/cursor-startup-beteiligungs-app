@@ -4,34 +4,29 @@ The model answers a single employee-side question:
 
     "My real (intended) gross salary is higher than what the startup actually
      pays me. The difference is deferred and I only get it back if the startup
-     succeeds. What is that arrangement really worth to me, once I account for
-     risk, the opportunity cost of not investing the money, and taxes?"
+     succeeds. How large must that deferred pay-out be so that accepting it is
+     *equivalent* to a person who received the same money as salary on day one
+     and invested it?"
 
-Everything in this module is intentionally explicit and side-effect free so the
-model is easy to read, unit-test and extend. Each calculation step is returned
-as a structured record (label + formula + value + explanation) so the frontend
-can render a fully transparent, step-by-step breakdown.
+In other words, we do NOT compare "having the money vs. not having it". We take
+the deferral as a given and compute the **fair required deferred compensation**:
+the gross amount the startup must promise (payable only on success) to make the
+employee whole for (a) the risk that the startup fails and (b) the investment
+growth they give up by not receiving the cash today.
+
+Core intuition
+--------------
+If the startup only succeeds with probability ``p`` (say 20%), then the promised
+pay-out must be about ``1 / p`` times larger (5x) just to break even on risk in
+expectation. On top of that, the employee loses the tax-advantaged investment
+growth they could have earned on the cash, so a further premium is required.
+
+Everything here is intentionally explicit and side-effect free so the model is
+easy to read, unit-test and extend. Each step is returned as a structured record
+(label + formula + value + explanation) so the frontend can render a fully
+transparent, step-by-step breakdown.
 
 All salary figures are ANNUAL GROSS amounts. Monthly salary is never used.
-
-Sign convention for the final economic value
----------------------------------------------
-The final value compares two worlds:
-
-  * World A - "Take the cash":  you receive the deferred portion as normal
-    salary now, pay wage tax on it, and invest the net amount. Investment gains
-    are taxed at the (lower) capital-gains rate.
-
-  * World B - "Defer the salary": you receive nothing now. You only get the
-    deferred amount back (taxed as wage income) if the startup succeeds, which
-    happens with the given success probability. The money cannot grow in the
-    meantime.
-
-    final_economic_value = value(World B) - value(World A)
-
-A negative number therefore means the deferral costs you money relative to
-simply taking the cash and investing it; a positive number means it is
-favourable.
 """
 
 from __future__ import annotations
@@ -44,9 +39,9 @@ from typing import Any
 # Default modelling assumptions (all configurable / easy to extend)
 # ---------------------------------------------------------------------------
 
-DEFAULT_WAGE_TAX_PCT = 45.0          # top marginal wage/income tax rate
+DEFAULT_WAGE_TAX_PCT = 45.0           # top marginal wage/income tax rate
 DEFAULT_CAPITAL_GAINS_TAX_PCT = 25.0  # flat capital-gains tax on investment gains
-DEFAULT_YEARS = 1.0                   # investment / deferral horizon in years
+DEFAULT_YEARS = 1.0                   # investment horizon of the day-one investor
 
 
 @dataclass
@@ -69,7 +64,7 @@ class CalculationInputs:
     capital_gains_tax_pct:
         Capital-gains tax rate applied to investment gains, in percent.
     years:
-        Investment / deferral horizon in years.
+        Investment horizon in years of the day-one investor benchmark.
     """
 
     intended_gross: float
@@ -92,12 +87,16 @@ class CalculationInputs:
                 "Actual salary paid cannot be higher than the intended salary; "
                 "there would be no deferred compensation."
             )
-        if not 0 <= self.success_probability_pct <= 100:
-            raise ValueError("Success probability must be between 0 and 100 percent.")
+        # A zero success probability would require an infinite pay-out to
+        # compensate for the risk, which is not a meaningful figure.
+        if not 0 < self.success_probability_pct <= 100:
+            raise ValueError(
+                "Success probability must be greater than 0 and at most 100 percent."
+            )
         if self.annual_return_pct < -100:
             raise ValueError("Annual investment return cannot be below -100 percent.")
-        if not 0 <= self.wage_tax_pct <= 100:
-            raise ValueError("Wage tax rate must be between 0 and 100 percent.")
+        if not 0 <= self.wage_tax_pct < 100:
+            raise ValueError("Wage tax rate must be between 0 and (below) 100 percent.")
         if not 0 <= self.capital_gains_tax_pct <= 100:
             raise ValueError("Capital-gains tax rate must be between 0 and 100 percent.")
         if self.years < 0:
@@ -114,7 +113,7 @@ class Step:
     formula: str
     substitution: str
     explanation: str
-    unit: str = "currency"
+    unit: str = "currency"  # "currency" or "multiplier"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -152,13 +151,26 @@ def _money(value: float) -> float:
     return round(value, 2)
 
 
+def _mult(value: float) -> float:
+    """Round a multiplier to 4 decimals."""
+
+    return round(value, 4)
+
+
 def calculate(inputs: CalculationInputs) -> CalculationResult:
-    """Run the full deferred-salary economic-value model.
+    """Run the deferred-salary "required compensation" model.
 
     Returns a :class:`CalculationResult` with a headline summary and an ordered
-    list of transparent steps that mirror the required output breakdown:
-    deferred salary, risk-adjusted expected value, foregone investment gains,
-    tax-adjusted investment effect and the final estimated economic value.
+    list of transparent steps:
+
+    1. Deferred salary (the annual shortfall).
+    2. Net amount a day-one earner could invest (after wage tax).
+    3. Foregone investment gains (net of capital-gains tax) - what the cash would
+       have grown into.
+    4. Benchmark value: the end wealth of someone paid on day one who invests.
+    5. Risk-compensation multiplier (1 / success probability).
+    6. Required gross deferred compensation (payable only on success).
+    7. Compensation multiple vs. the nominal deferred salary.
     """
 
     inputs.validate()
@@ -187,179 +199,157 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
             explanation=(
                 "The part of your intended annual gross salary that you are not "
                 "actually being paid. This is the amount treated as deferred "
-                "compensation."
+                "compensation and the basis for everything below."
             ),
         )
     )
 
-    # -- Step 2: Risk-adjusted expected value (gross) ---------------------
-    risk_adjusted = deferred * p
-    steps.append(
-        Step(
-            key="risk_adjusted_value",
-            label="Risk-adjusted expected value (gross)",
-            value=_money(risk_adjusted),
-            formula="risk_adjusted = deferred * success_probability",
-            substitution=f"{deferred:,.2f} x {p:.4f} = {risk_adjusted:,.2f}",
-            explanation=(
-                "You only get the deferred salary back if the startup succeeds. "
-                "Weighting by the success probability gives the expected gross "
-                "amount you can realistically expect to recover."
-            ),
-        )
-    )
-
-    # -- Step 3: Net deferred salary (the amount you could invest) --------
-    # World A alternative: had you received the deferred salary, you would pay
-    # wage tax on it and invest what is left.
+    # -- Step 2: Net amount a day-one earner could invest -----------------
     net_deferred = deferred * (1 - t_wage)
     steps.append(
         Step(
-            key="net_deferred_salary",
-            label="Net deferred salary available to invest",
+            key="net_deferred_invested",
+            label="Net amount investable on day one (after wage tax)",
             value=_money(net_deferred),
-            formula="net_deferred = deferred * (1 - wage_tax)",
+            formula="net_invested = deferred * (1 - wage_tax)",
             substitution=f"{deferred:,.2f} x (1 - {t_wage:.2f}) = {net_deferred:,.2f}",
             explanation=(
-                "If you had been paid the deferred salary instead, wage tax would "
-                "apply first. Only the net amount could actually be invested."
+                "The benchmark is a colleague who is actually paid this salary on "
+                "day one. They pay wage tax first and can invest what is left."
             ),
         )
     )
 
-    # -- Step 4: Foregone investment gains (pre-tax) ----------------------
+    # -- Step 3: Foregone investment gains (net of capital-gains tax) ------
     growth_factor = (1 + r) ** n
-    foregone_gain_gross = net_deferred * (growth_factor - 1)
-    steps.append(
-        Step(
-            key="foregone_gain_gross",
-            label="Foregone investment gains (pre-tax)",
-            value=_money(foregone_gain_gross),
-            formula="gain_gross = net_deferred * ((1 + return)^years - 1)",
-            substitution=(
-                f"{net_deferred:,.2f} x ((1 + {r:.4f})^{n:g} - 1) "
-                f"= {foregone_gain_gross:,.2f}"
-            ),
-            explanation=(
-                "The investment growth you give up by not having the net deferred "
-                "salary in hand to invest over the horizon. This is the core "
-                "opportunity cost of deferring."
-            ),
-        )
-    )
-
-    # -- Step 5: Tax-adjusted investment effect ---------------------------
-    # Investment gains are taxed at the (lower) capital-gains rate, not the
-    # (higher) wage-tax rate. That difference is the tax advantage of earning
-    # money via investment gains rather than as additional salary.
-    foregone_gain_net = foregone_gain_gross * (1 - t_cg)
-    tax_advantage = foregone_gain_gross * (t_wage - t_cg)
+    gain_gross = net_deferred * (growth_factor - 1)
+    gain_net = gain_gross * (1 - t_cg)
+    tax_advantage = gain_gross * (t_wage - t_cg)
     steps.append(
         Step(
             key="foregone_gain_net",
-            label="Foregone investment gains (after 25% capital-gains tax)",
-            value=_money(foregone_gain_net),
-            formula="gain_net = gain_gross * (1 - capital_gains_tax)",
+            label="Foregone investment gains (after capital-gains tax)",
+            value=_money(gain_net),
+            formula="gain_net = net_invested * ((1 + return)^years - 1) * (1 - capital_gains_tax)",
             substitution=(
-                f"{foregone_gain_gross:,.2f} x (1 - {t_cg:.2f}) "
-                f"= {foregone_gain_net:,.2f}"
+                f"{net_deferred:,.2f} x ((1 + {r:.4f})^{n:g} - 1) x (1 - {t_cg:.2f}) "
+                f"= {gain_net:,.2f}"
             ),
             explanation=(
-                "Investment gains are taxed at the capital-gains rate. This is the "
-                "net growth you actually forgo by deferring."
+                "The investment growth the day-one earner enjoys and you give up. "
+                "Investment gains are taxed at the (lower) capital-gains rate, not "
+                "the wage-tax rate - a tax advantage of the investment route."
             ),
         )
     )
     steps.append(
         Step(
             key="tax_advantage",
-            label="Tax advantage: investment vs. salary taxation",
+            label="Tax advantage of gains vs. salary taxation",
             value=_money(tax_advantage),
-            formula="tax_advantage = gain_gross * (wage_tax - capital_gains_tax)",
+            formula="tax_advantage = gain_pretax * (wage_tax - capital_gains_tax)",
             substitution=(
-                f"{foregone_gain_gross:,.2f} x ({t_wage:.2f} - {t_cg:.2f}) "
-                f"= {tax_advantage:,.2f}"
+                f"{gain_gross:,.2f} x ({t_wage:.2f} - {t_cg:.2f}) = {tax_advantage:,.2f}"
             ),
             explanation=(
-                "Money earned as investment gains is taxed at the capital-gains "
-                "rate instead of the higher marginal wage-tax rate. This is how "
-                "much extra tax you would have paid if the same gain had been "
-                "taxed as salary - i.e. the tax advantage of the investment route."
+                "How much more the investment growth would be taxed if it were "
+                "treated as salary instead of capital gains. This tax gap is part "
+                "of what the deferred pay-out must make up for."
             ),
         )
     )
 
-    # -- World A vs World B: the two comparison scenarios ------------------
-    # World A - take the cash and invest it: keep the net principal plus the
-    # after-tax investment gains.
-    value_take_cash = net_deferred + foregone_gain_net
+    # -- Step 4: Benchmark end wealth of the day-one investor -------------
+    benchmark_value = net_deferred + gain_net
     steps.append(
         Step(
-            key="value_take_cash",
-            label="Value if you take the cash and invest it (World A)",
-            value=_money(value_take_cash),
-            formula="value_A = net_deferred + gain_net",
-            substitution=(
-                f"{net_deferred:,.2f} + {foregone_gain_net:,.2f} "
-                f"= {value_take_cash:,.2f}"
-            ),
+            key="benchmark_value",
+            label="Benchmark value if paid & invested on day one",
+            value=_money(benchmark_value),
+            formula="benchmark = net_invested + gain_net",
+            substitution=f"{net_deferred:,.2f} + {gain_net:,.2f} = {benchmark_value:,.2f}",
             explanation=(
-                "Your end wealth in the alternative world: the net deferred salary "
-                "you keep plus its after-tax investment growth."
+                "The end wealth of the colleague who was paid on day one: their net "
+                "salary plus its after-tax investment growth. Your deferred pay-out "
+                "must be worth at least this much in expectation."
             ),
         )
     )
 
-    # World B - defer: you only recover the (wage-taxed) deferred salary if the
-    # startup succeeds, and it cannot grow in the meantime.
-    expected_net_repayment = risk_adjusted * (1 - t_wage)
-    value_defer = expected_net_repayment
+    # -- Step 5: Risk-compensation multiplier ----------------------------
+    risk_multiplier = 1 / p
     steps.append(
         Step(
-            key="value_defer",
-            label="Value if you defer the salary (World B)",
-            value=_money(value_defer),
-            formula="value_B = risk_adjusted * (1 - wage_tax)",
-            substitution=(
-                f"{risk_adjusted:,.2f} x (1 - {t_wage:.2f}) = {value_defer:,.2f}"
-            ),
+            key="risk_multiplier",
+            label="Risk-compensation multiplier (1 / success probability)",
+            value=_mult(risk_multiplier),
+            unit="multiplier",
+            formula="risk_multiplier = 1 / success_probability",
+            substitution=f"1 / {p:.4f} = {risk_multiplier:,.4f}",
             explanation=(
-                "Your expected end wealth if you defer: the risk-adjusted deferred "
-                "salary, taxed as wage income when it is finally repaid, with no "
-                "investment growth in the meantime."
+                "Because the pay-out only happens if the startup succeeds, its "
+                "promised size must be scaled up by 1 / probability so the expected "
+                "value is fair. E.g. a 20% chance requires a 5x pay-out."
             ),
         )
     )
 
-    # -- Step 6: Final estimated economic value ---------------------------
-    final_value = value_defer - value_take_cash
+    # -- Step 6: Required gross deferred compensation --------------------
+    # We need the expected, after-wage-tax pay-out to equal the benchmark value:
+    #     p * required_gross * (1 - t_wage) = benchmark_value
+    # Solving for required_gross gives the risk gross-up (1/p) and the wage-tax
+    # gross-up (1/(1 - t_wage)).
+    required_gross = benchmark_value / (p * (1 - t_wage))
     steps.append(
         Step(
-            key="final_economic_value",
-            label="Final estimated economic value of deferring",
-            value=_money(final_value),
-            formula="final_value = value_B - value_A",
+            key="required_gross_compensation",
+            label="Required deferred compensation (gross, paid on success)",
+            value=_money(required_gross),
+            formula="required = benchmark / (success_probability * (1 - wage_tax))",
             substitution=(
-                f"{value_defer:,.2f} - {value_take_cash:,.2f} = {final_value:,.2f}"
+                f"{benchmark_value:,.2f} / ({p:.4f} x (1 - {t_wage:.2f})) "
+                f"= {required_gross:,.2f}"
             ),
             explanation=(
-                "The net economic value of accepting deferred salary compared with "
-                "taking the cash and investing it. Negative means deferring costs "
-                "you money; positive means it is favourable."
+                "The gross amount the startup must promise to pay on success so the "
+                "deal is fair. It grosses up the benchmark value for the risk of "
+                "failure (1 / probability) and for the wage tax you will owe when "
+                "the deferred salary is finally paid out."
+            ),
+        )
+    )
+
+    # -- Step 7: Compensation multiple vs. nominal deferred salary --------
+    compensation_multiple = required_gross / deferred if deferred else 0.0
+    steps.append(
+        Step(
+            key="compensation_multiple",
+            label="Compensation multiple vs. deferred salary",
+            value=_mult(compensation_multiple),
+            unit="multiplier",
+            formula="multiple = required / deferred",
+            substitution=(
+                f"{required_gross:,.2f} / {deferred:,.2f} = {compensation_multiple:,.4f}"
+                if deferred
+                else "n/a (no deferred salary)"
+            ),
+            explanation=(
+                "How many times the nominal deferred salary the startup must promise "
+                "to make deferral fair. Pure risk alone gives 1 / probability; the "
+                "extra above that is the foregone tax-advantaged investment growth."
             ),
         )
     )
 
     summary = {
         "deferred_salary": _money(deferred),
-        "risk_adjusted_value": _money(risk_adjusted),
-        "foregone_gain_gross": _money(foregone_gain_gross),
-        "foregone_gain_net": _money(foregone_gain_net),
+        "net_deferred_invested": _money(net_deferred),
+        "foregone_gain_net": _money(gain_net),
         "tax_advantage": _money(tax_advantage),
-        "value_take_cash": _money(value_take_cash),
-        "value_defer": _money(value_defer),
-        "final_economic_value": _money(final_value),
-        "favourable": final_value >= 0,
+        "benchmark_value": _money(benchmark_value),
+        "risk_multiplier": _mult(risk_multiplier),
+        "required_gross_compensation": _money(required_gross),
+        "compensation_multiple": _mult(compensation_multiple),
     }
 
     assumptions = {
@@ -369,7 +359,9 @@ def calculate(inputs: CalculationInputs) -> CalculationResult:
         "notes": [
             "All salary figures are annual gross amounts (monthly salary is never used).",
             "Startup success probability is the only risk-adjustment input.",
-            "Deferred salary, when repaid, is taxed as wage income.",
+            "Compensation is made 'fair' on an expected-value basis: expected "
+            "after-tax pay-out equals the day-one investor's end wealth.",
+            "The deferred pay-out, when made, is taxed as wage income.",
             "Investment gains are taxed at the capital-gains rate (default 25%).",
             "Wage/income tax uses the top marginal rate (default up to 45%).",
         ],
