@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deferred Salary Value Calculator</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app__header">
+      <h1>Deferred Salary Value Calculator</h1>
+      <p class="app__subtitle">
+        Estimate the real, employee-side economic value of unpaid startup salary
+        that is deferred as compensation instead of paid out today.
+      </p>
+    </header>
+
+    <main class="layout">
+      <!-- ------------------------------------------------------------ -->
+      <!-- Inputs                                                       -->
+      <!-- ------------------------------------------------------------ -->
+      <section class="card inputs" aria-label="Inputs">
+        <h2 class="card__title">Your numbers</h2>
+        <form id="calc-form" class="form">
+          <div class="field">
+            <label for="intended_gross">Intended annual gross salary</label>
+            <div class="input-wrap">
+              <span class="input-prefix">€</span>
+              <input type="number" id="intended_gross" name="intended_gross"
+                     min="0" step="1000" value="90000" required />
+            </div>
+            <small>Your real target salary — the full annual gross you should earn.</small>
+          </div>
+
+          <div class="field">
+            <label for="actual_gross">Actual annual gross salary paid</label>
+            <div class="input-wrap">
+              <span class="input-prefix">€</span>
+              <input type="number" id="actual_gross" name="actual_gross"
+                     min="0" step="1000" value="60000" required />
+            </div>
+            <small>What the startup actually pays you per year (gross).</small>
+          </div>
+
+          <div class="field">
+            <label for="success_probability_pct">Startup success probability</label>
+            <div class="input-wrap">
+              <input type="number" id="success_probability_pct" name="success_probability_pct"
+                     min="0" max="100" step="1" value="30" required />
+              <span class="input-suffix">%</span>
+            </div>
+            <small>Chance the startup succeeds and repays the deferred salary. The only risk input.</small>
+          </div>
+
+          <div class="field">
+            <label for="annual_return_pct">Expected annual investment return</label>
+            <div class="input-wrap">
+              <input type="number" id="annual_return_pct" name="annual_return_pct"
+                     min="-100" step="0.5" value="7" required />
+              <span class="input-suffix">%</span>
+            </div>
+            <small>Return you could earn if you invested the money instead (e.g. an index fund).</small>
+          </div>
+
+          <details class="assumptions-editor">
+            <summary>Advanced assumptions</summary>
+            <div class="field">
+              <label for="wage_tax_pct">Marginal wage/income tax</label>
+              <div class="input-wrap">
+                <input type="number" id="wage_tax_pct" name="wage_tax_pct"
+                       min="0" max="100" step="1" value="45" />
+                <span class="input-suffix">%</span>
+              </div>
+              <small>Top marginal tax rate on salary (default up to 45%).</small>
+            </div>
+            <div class="field">
+              <label for="capital_gains_tax_pct">Capital-gains tax</label>
+              <div class="input-wrap">
+                <input type="number" id="capital_gains_tax_pct" name="capital_gains_tax_pct"
+                       min="0" max="100" step="1" value="25" />
+                <span class="input-suffix">%</span>
+              </div>
+              <small>Tax on investment gains (default 25%).</small>
+            </div>
+            <div class="field">
+              <label for="years">Investment / deferral horizon</label>
+              <div class="input-wrap">
+                <input type="number" id="years" name="years"
+                       min="0" step="1" value="1" />
+                <span class="input-suffix">yr</span>
+              </div>
+              <small>How long the money would have been invested (years).</small>
+            </div>
+          </details>
+
+          <button type="submit" class="btn">Calculate</button>
+          <p id="error" class="error" role="alert" hidden></p>
+        </form>
+      </section>
+
+      <!-- ------------------------------------------------------------ -->
+      <!-- Results                                                      -->
+      <!-- ------------------------------------------------------------ -->
+      <section class="results" aria-label="Results">
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-tab="summary" role="tab">Summary</button>
+          <button class="tab" data-tab="details" role="tab">Detailed calculation</button>
+        </div>
+
+        <!-- Summary view -->
+        <div id="tab-summary" class="tab-panel is-active" role="tabpanel">
+          <div class="headline card">
+            <span class="headline__label">Final estimated economic value of deferring</span>
+            <span id="headline-value" class="headline__value">—</span>
+            <span id="headline-note" class="headline__note"></span>
+          </div>
+
+          <div class="summary-grid">
+            <div class="stat card">
+              <span class="stat__label">Deferred salary</span>
+              <span id="s-deferred" class="stat__value">—</span>
+            </div>
+            <div class="stat card">
+              <span class="stat__label">Risk-adjusted expected value</span>
+              <span id="s-risk" class="stat__value">—</span>
+            </div>
+            <div class="stat card">
+              <span class="stat__label">Foregone investment gains</span>
+              <span id="s-foregone" class="stat__value">—</span>
+            </div>
+            <div class="stat card">
+              <span class="stat__label">Tax-adjusted investment effect</span>
+              <span id="s-taxeffect" class="stat__value">—</span>
+            </div>
+          </div>
+
+          <div class="card compare">
+            <h3 class="card__title">Take the cash vs. defer</h3>
+            <div class="compare__row">
+              <span>Take the cash &amp; invest (World A)</span>
+              <strong id="c-cash">—</strong>
+            </div>
+            <div class="compare__row">
+              <span>Defer the salary (World B)</span>
+              <strong id="c-defer">—</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Details view -->
+        <div id="tab-details" class="tab-panel" role="tabpanel" hidden>
+          <div class="card">
+            <h3 class="card__title">Step-by-step breakdown</h3>
+            <p class="muted">Every figure below shows its formula and the numbers plugged in.</p>
+            <ol id="steps" class="steps"></ol>
+          </div>
+          <div class="card">
+            <h3 class="card__title">Assumptions</h3>
+            <ul id="assumptions" class="assumptions"></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app__footer">
+      <p>Runs locally. All calculations happen on your machine via a Python server.</p>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
