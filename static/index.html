@@ -22,9 +22,9 @@
         <div class="card" id="years-card">
           <h2 class="card__title"><span class="step">1</span> Years &amp; success probability</h2>
           <p class="hint">
-            Chance the startup succeeds in each year. The deferred salary of that
-            year is multiplied by it (e.g. 10% success = 90% risk of failure, so
-            only 10% of the deferred salary counts).
+            Chance the startup succeeds in each year (must be above 0%). The
+            deferred salary of that year is divided by it to compensate for the
+            risk, e.g. 20% success means 5&times; the deferred salary.
           </p>
           <div id="years-list" class="rows"></div>
           <button type="button" id="add-year" class="btn btn--ghost">+ Add year</button>
@@ -59,9 +59,9 @@
             <span class="total__note">Fictional minus actual salary, all employees, all years</span>
           </div>
           <div class="total total--accent card">
-            <span class="total__label">Company: deferred salary &times; risk factor</span>
+            <span class="total__label">Company: risk-adjusted deferred salary</span>
             <span id="company-risk" class="total__value">&ndash;</span>
-            <span class="total__note">Each year multiplied by that year's success probability</span>
+            <span class="total__note">Each year divided by that year's success probability</span>
           </div>
         </div>
 
@@ -76,7 +76,7 @@
                   <th class="num">Deferred / year</th>
                   <th class="num">Years</th>
                   <th class="num">Total deferred</th>
-                  <th class="num">Deferred &times; risk</th>
+                  <th class="num">Risk-adjusted</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -95,8 +95,8 @@
                   <th class="num">Success probability</th>
                   <th class="num">Employees</th>
                   <th class="num">Deferred</th>
-                  <th class="num">Deferred &times; risk</th>
-                  <th class="num">Accumulated &times; risk</th>
+                  <th class="num">Risk-adjusted</th>
+                  <th class="num">Accumulated risk-adjusted</th>
                 </tr>
               </thead>
               <tbody></tbody>

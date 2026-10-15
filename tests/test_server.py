@@ -77,7 +77,7 @@ class ServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(data["company"]["total_deferred"], 100000.0)
-        self.assertEqual(data["company"]["total_risk_adjusted"], 31000.0)
+        self.assertEqual(data["company"]["total_risk_adjusted"], 475000.0)
         self.assertEqual([e["name"] for e in data["employees"]], ["Ada", "Bruno"])
 
     def test_string_numbers_are_accepted(self):
@@ -90,7 +90,20 @@ class ServerTests(unittest.TestCase):
             }
         )
         self.assertEqual(status, 200)
-        self.assertEqual(data["company"]["total_risk_adjusted"], 10000.0)
+        # 50,000 deferred / 0.20 success probability
+        self.assertEqual(data["company"]["total_risk_adjusted"], 250000.0)
+
+    def test_zero_probability_returns_400(self):
+        status, data = self.post(
+            {
+                "years": [{"success_probability_pct": 0}],
+                "employees": [
+                    {"name": "Ada", "start_year": 1, "fictional_gross": 90000, "actual_gross": 60000}
+                ],
+            }
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("greater than 0", data["error"])
 
     def test_validation_errors_return_400_with_message(self):
         status, data = self.post(

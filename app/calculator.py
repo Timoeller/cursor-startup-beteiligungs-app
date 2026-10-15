@@ -11,7 +11,12 @@ The model is deliberately small.
 For every employee and every year in which they are employed::
 
     deferred      = fictional_gross - actual_gross
-    risk_adjusted = deferred * success_probability(year)
+    risk_adjusted = deferred / success_probability(year)
+
+The deferred salary is only paid out if the startup succeeds, so to compensate for
+that risk the amount has to be divided by the success probability (20% success
+means 5 times the deferred salary). Because of this the probability must be
+greater than zero.
 
 Both values are accumulated per employee over all their years, and then summed
 over all employees to give the company totals. Investment returns and taxes are
@@ -56,9 +61,10 @@ def validate(years: list[YearInput], employees: list[EmployeeInput]) -> None:
         raise ValueError("Add at least one year.")
 
     for index, year in enumerate(years, start=1):
-        if not 0 <= year.success_probability_pct <= 100:
+        if not 0 < year.success_probability_pct <= 100:
             raise ValueError(
-                f"Year {index}: success probability must be between 0 and 100 percent."
+                f"Year {index}: success probability must be greater than 0 and "
+                "at most 100 percent."
             )
 
     for employee in employees:
@@ -121,7 +127,7 @@ def calculate(years: list[YearInput], employees: list[EmployeeInput]) -> dict[st
             active = number >= employee.start_year
             probability = year.success_probability_pct / 100.0
             deferred = annual_deferred if active else 0.0
-            risk_adjusted = deferred * probability
+            risk_adjusted = deferred / probability
 
             if active:
                 years_active += 1

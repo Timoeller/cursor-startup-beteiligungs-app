@@ -39,11 +39,15 @@ function formatPercent(value) {
 /* Input rendering                                                     */
 /* ------------------------------------------------------------------ */
 
+function trimNumber(value) {
+  return String(Math.round(value * 100) / 100);
+}
+
 function failureText(rawValue) {
   const value = Number(rawValue);
   if (rawValue === "" || Number.isNaN(value)) return "";
-  const failure = Math.round((100 - value) * 100) / 100;
-  return `${failure}% risk of failure`;
+  if (value <= 0 || value > 100) return "Must be above 0% and at most 100%";
+  return `${trimNumber(100 - value)}% risk of failure \u00b7 \u00d7${trimNumber(100 / value)}`;
 }
 
 function renderYears() {
@@ -54,7 +58,7 @@ function renderYears() {
     const risk = el("span", { class: "year-row__risk", text: failureText(year.success_probability_pct) });
     const input = el("input", {
       type: "number",
-      min: "0",
+      min: "1",
       max: "100",
       step: "1",
       value: year.success_probability_pct,
@@ -333,7 +337,7 @@ function renderBreakdown(employees) {
           el("th", { text: "Year" }),
           el("th", { class: "num", text: "Success probability" }),
           el("th", { class: "num", text: "Deferred" }),
-          el("th", { class: "num", text: "Deferred \u00d7 risk" }),
+          el("th", { class: "num", text: "Risk-adjusted" }),
         ]),
       ]),
       el("tbody", {}, rows),
@@ -351,7 +355,7 @@ function renderBreakdown(employees) {
       el("summary", {}, [
         el("span", { text: employee.name }),
         el("span", {
-          text: `${money.format(employee.total_deferred)} deferred \u2192 ${money.format(employee.total_risk_adjusted)} after risk`,
+          text: `${money.format(employee.total_deferred)} deferred \u2192 ${money.format(employee.total_risk_adjusted)} risk-adjusted`,
         }),
       ]),
       el("div", { class: "table-wrap" }, [table]),
