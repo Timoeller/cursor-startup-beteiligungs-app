@@ -1,158 +1,168 @@
-"""Unit tests for the deferred-salary "required compensation" model."""
+"""Unit tests for the yearly-risk / multi-employee deferred-salary model.
+
+The risk adjustment divides the deferred salary by the success probability, so a
+20% chance of success means five times the deferred salary.
+"""
 
 import unittest
 
-from app.calculator import CalculationInputs, calculate
+from app.calculator import EmployeeInput, YearInput, calculate
 
 
-class CalculatorTests(unittest.TestCase):
-    def _base_inputs(self, **overrides):
-        params = dict(
-            intended_gross=90000,
-            actual_gross=60000,
-            success_probability_pct=20,
-            annual_return_pct=7,
-            wage_tax_pct=45,
-            capital_gains_tax_pct=25,
-            years=1,
-        )
-        params.update(overrides)
-        return CalculationInputs(**params)
+def years(*probabilities):
+    return [YearInput(success_probability_pct=p) for p in probabilities]
 
-    def test_deferred_salary(self):
-        result = calculate(self._base_inputs())
-        self.assertAlmostEqual(result.summary["deferred_salary"], 30000.0)
 
-    def test_total_deferred_over_years(self):
-        result = calculate(self._base_inputs(years=3))
-        self.assertAlmostEqual(result.summary["total_deferred_salary"], 90000.0)
-        self.assertEqual(result.summary["years"], 3)
+def employee(name="Ada", start_year=1, fictional=90000, actual=60000):
+    return EmployeeInput(
+        name=name, start_year=start_year, fictional_gross=fictional, actual_gross=actual
+    )
 
-    def test_single_year_matches_baseline(self):
-        # N=1 must reduce exactly to the original single-year model.
-        result = calculate(self._base_inputs(years=1))
-        self.assertAlmostEqual(result.summary["total_deferred_salary"], 30000.0)
-        self.assertAlmostEqual(
-            result.summary["required_gross_compensation"], 157875.0, places=2
-        )
-        self.assertAlmostEqual(result.summary["compensation_multiple"], 5.2625, places=4)
 
-    def test_net_deferred_invested(self):
-        result = calculate(self._base_inputs())
-        # 30000 * (1 - 0.45) = 16500
-        self.assertAlmostEqual(result.summary["net_deferred_invested"], 16500.0)
+class SingleEmployeeTests(unittest.TestCase):
+    def test_one_year_divides_difference_by_probability(self):
+        # 30,000 / 0.10 = 300,000
+        result = calculate(years(10), [employee()])
+        row = result["employees"][0]
+        self.assertEqual(row["annual_deferred"], 30000.0)
+        self.assertEqual(row["total_deferred"], 30000.0)
+        self.assertEqual(row["total_risk_adjusted"], 300000.0)
 
-    def test_foregone_gain_net_and_tax_advantage(self):
-        result = calculate(self._base_inputs())
-        # pre-tax gain = 16500 * 0.07 = 1155; net = 1155 * 0.75 = 866.25
-        self.assertAlmostEqual(result.summary["foregone_gain_net"], 866.25, places=2)
-        # tax advantage = 1155 * (0.45 - 0.25) = 231
-        self.assertAlmostEqual(result.summary["tax_advantage"], 231.0, places=2)
+    def test_twenty_percent_success_is_five_times(self):
+        result = calculate(years(20), [employee()])
+        self.assertEqual(result["employees"][0]["total_risk_adjusted"], 150000.0)
 
-    def test_benchmark_value(self):
-        result = calculate(self._base_inputs())
-        # 16500 + 866.25 = 17366.25
-        self.assertAlmostEqual(result.summary["benchmark_value"], 17366.25, places=2)
-
-    def test_risk_multiplier_is_one_over_p(self):
-        result = calculate(self._base_inputs(success_probability_pct=20))
-        self.assertAlmostEqual(result.summary["risk_multiplier"], 5.0, places=4)
-
-    def test_required_gross_compensation(self):
-        result = calculate(self._base_inputs())
-        # benchmark / (p * (1 - wage)) = 17366.25 / (0.20 * 0.55) = 157875
-        self.assertAlmostEqual(
-            result.summary["required_gross_compensation"], 157875.0, places=2
+    def test_risk_differs_per_year(self):
+        # Year 1: 10% -> 300,000; Year 2: 50% -> 60,000; Year 3: 100% -> 30,000
+        result = calculate(years(10, 50, 100), [employee()])
+        row = result["employees"][0]
+        self.assertEqual(row["total_deferred"], 90000.0)
+        self.assertEqual(row["total_risk_adjusted"], 390000.0)
+        self.assertEqual(
+            [y["risk_adjusted"] for y in row["by_year"]], [300000.0, 60000.0, 30000.0]
         )
 
-    def test_compensation_multiple(self):
-        result = calculate(self._base_inputs())
-        # 157875 / 30000 = 5.2625
-        self.assertAlmostEqual(
-            result.summary["compensation_multiple"], 5.2625, places=4
+    def test_full_probability_leaves_amount_unchanged(self):
+        result = calculate(years(100, 100), [employee()])
+        self.assertEqual(result["employees"][0]["total_risk_adjusted"], 60000.0)
+
+    def test_lower_probability_never_decreases_the_amount(self):
+        high = calculate(years(80), [employee()])["company"]["total_risk_adjusted"]
+        low = calculate(years(5), [employee()])["company"]["total_risk_adjusted"]
+        self.assertGreater(low, high)
+
+    def test_fractional_probability(self):
+        # 30,000 / 0.125 = 240,000
+        result = calculate(years(12.5), [employee()])
+        self.assertEqual(result["employees"][0]["total_risk_adjusted"], 240000.0)
+
+    def test_no_deferral_when_salaries_equal(self):
+        result = calculate(years(50), [employee(fictional=60000, actual=60000)])
+        self.assertEqual(result["employees"][0]["total_deferred"], 0.0)
+        self.assertEqual(result["employees"][0]["total_risk_adjusted"], 0.0)
+
+
+class StartYearTests(unittest.TestCase):
+    def test_employee_starting_later_only_counts_from_start_year(self):
+        # Starts in year 3 of 4: only years 3 (25% -> 120,000) and 4 (100% -> 30,000).
+        result = calculate(years(10, 20, 25, 100), [employee(start_year=3)])
+        row = result["employees"][0]
+        self.assertEqual(row["years_active"], 2)
+        self.assertEqual(row["total_deferred"], 60000.0)
+        self.assertEqual(row["total_risk_adjusted"], 150000.0)
+        self.assertEqual([y["active"] for y in row["by_year"]], [False, False, True, True])
+        self.assertEqual(row["by_year"][0]["deferred"], 0.0)
+        self.assertEqual(row["by_year"][0]["risk_adjusted"], 0.0)
+
+    def test_start_year_beyond_timeline_warns_and_counts_nothing(self):
+        result = calculate(years(10, 20), [employee(name="Late", start_year=5)])
+        row = result["employees"][0]
+        self.assertEqual(row["years_active"], 0)
+        self.assertEqual(row["total_deferred"], 0.0)
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertIn("Late", result["warnings"][0])
+
+
+class CompanyTests(unittest.TestCase):
+    def setUp(self):
+        # Two years at 10% / 40%.
+        # Ada:   starts year 1, 90k vs 60k -> 30k/yr -> 30k/0.10 + 30k/0.40 = 375,000
+        # Bruno: starts year 2, 120k vs 80k -> 40k/yr -> 40k/0.40 = 100,000
+        self.result = calculate(
+            years(10, 40),
+            [
+                employee("Ada", 1, 90000, 60000),
+                employee("Bruno", 2, 120000, 80000),
+            ],
         )
 
-    def test_pure_risk_multiple_when_no_growth(self):
-        # With zero return there is no investment premium, so the multiple is
-        # exactly 1 / probability (the user's "5x for 20%" intuition).
-        result = calculate(
-            self._base_inputs(success_probability_pct=20, annual_return_pct=0)
-        )
-        self.assertAlmostEqual(result.summary["compensation_multiple"], 5.0, places=4)
-        self.assertAlmostEqual(
-            result.summary["required_gross_compensation"], 150000.0, places=2
-        )
+    def test_per_employee_totals(self):
+        ada, bruno = self.result["employees"]
+        self.assertEqual(ada["total_deferred"], 60000.0)
+        self.assertEqual(ada["total_risk_adjusted"], 375000.0)
+        self.assertEqual(bruno["total_deferred"], 40000.0)
+        self.assertEqual(bruno["total_risk_adjusted"], 100000.0)
 
-    def test_pure_risk_multiple_multi_year_no_growth(self):
-        # Multi-year with zero return: still exactly 1/p, on the total deferred.
-        result = calculate(
-            self._base_inputs(success_probability_pct=20, annual_return_pct=0, years=3)
-        )
-        self.assertAlmostEqual(result.summary["compensation_multiple"], 5.0, places=4)
-        # 3 * 30000 / 0.20 = 450000
-        self.assertAlmostEqual(
-            result.summary["required_gross_compensation"], 450000.0, places=2
-        )
+    def test_company_totals_are_sum_of_employees(self):
+        company = self.result["company"]
+        self.assertEqual(company["total_deferred"], 100000.0)
+        self.assertEqual(company["total_risk_adjusted"], 475000.0)
+        self.assertEqual(company["employee_count"], 2)
+        self.assertEqual(company["year_count"], 2)
 
-    def test_multi_year_earlier_years_compound_longer(self):
-        # Two years at 7%: year 1 compounds 2 years, year 2 compounds 1 year.
-        result = calculate(self._base_inputs(annual_return_pct=7, years=2))
-        net = 30000 * (1 - 0.45)
-        gain_gross = net * ((1.07 ** 2) - 1) + net * ((1.07 ** 1) - 1)
-        gain_net = gain_gross * (1 - 0.25)
-        benchmark = net * 2 + gain_net
-        self.assertAlmostEqual(result.summary["foregone_gain_net"], round(gain_net, 2), places=2)
-        self.assertAlmostEqual(result.summary["benchmark_value"], round(benchmark, 2), places=2)
+    def test_company_per_year(self):
+        year1, year2 = self.result["years"]
+        self.assertEqual(year1["active_employees"], 1)
+        self.assertEqual(year1["deferred"], 30000.0)
+        self.assertEqual(year1["risk_adjusted"], 300000.0)
+        self.assertEqual(year2["active_employees"], 2)
+        self.assertEqual(year2["deferred"], 70000.0)
+        # 70,000 / 0.40
+        self.assertEqual(year2["risk_adjusted"], 175000.0)
 
-    def test_more_years_needs_higher_multiple(self):
-        one = calculate(self._base_inputs(years=1)).summary["compensation_multiple"]
-        three = calculate(self._base_inputs(years=3)).summary["compensation_multiple"]
-        self.assertGreater(three, one)
+    def test_year_totals_match_company_totals(self):
+        years_total = sum(y["risk_adjusted"] for y in self.result["years"])
+        self.assertEqual(years_total, self.result["company"]["total_risk_adjusted"])
 
-    def test_fairness_identity(self):
-        # By construction: expected after-tax pay-out == benchmark value.
-        result = calculate(self._base_inputs(success_probability_pct=35, annual_return_pct=9, years=4))
-        s = result.summary
-        p = 0.35
-        wage = 0.45
-        expected_net_payout = p * s["required_gross_compensation"] * (1 - wage)
-        self.assertAlmostEqual(expected_net_payout, s["benchmark_value"], places=2)
+    def test_no_employees_gives_zero_company(self):
+        result = calculate(years(10), [])
+        self.assertEqual(result["company"]["total_deferred"], 0.0)
+        self.assertEqual(result["company"]["total_risk_adjusted"], 0.0)
+        self.assertEqual(result["employees"], [])
 
-    def test_steps_present_and_ordered(self):
-        result = calculate(self._base_inputs())
-        keys = [s.key for s in result.steps]
-        for expected in [
-            "deferred_salary",
-            "total_deferred_salary",
-            "net_deferred_invested",
-            "foregone_gain_net",
-            "tax_advantage",
-            "benchmark_value",
-            "risk_multiplier",
-            "required_gross_compensation",
-            "compensation_multiple",
-        ]:
-            self.assertIn(expected, keys)
+    def test_blank_name_gets_default(self):
+        result = calculate(years(10), [employee(name="  ")])
+        self.assertEqual(result["employees"][0]["name"], "Employee 1")
 
-    def test_validation_actual_gt_intended(self):
+
+class ValidationTests(unittest.TestCase):
+    def test_requires_a_year(self):
         with self.assertRaises(ValueError):
-            calculate(self._base_inputs(intended_gross=50000, actual_gross=60000))
+            calculate([], [employee()])
 
-    def test_validation_probability_zero(self):
-        with self.assertRaises(ValueError):
-            calculate(self._base_inputs(success_probability_pct=0))
+    def test_probability_must_be_above_zero_and_at_most_100(self):
+        for bad in (-1, 0, 101):
+            with self.assertRaises(ValueError):
+                calculate(years(bad), [employee()])
 
-    def test_validation_probability_range(self):
-        with self.assertRaises(ValueError):
-            calculate(self._base_inputs(success_probability_pct=150))
+    def test_zero_probability_message_names_the_year(self):
+        with self.assertRaises(ValueError) as caught:
+            calculate(years(10, 0), [employee()])
+        self.assertIn("Year 2", str(caught.exception))
+        self.assertIn("greater than 0", str(caught.exception))
 
-    def test_validation_years_minimum(self):
+    def test_actual_higher_than_fictional(self):
         with self.assertRaises(ValueError):
-            calculate(self._base_inputs(years=0))
+            calculate(years(10), [employee(fictional=50000, actual=60000)])
 
-    def test_validation_years_whole_number(self):
+    def test_negative_salary(self):
         with self.assertRaises(ValueError):
-            calculate(self._base_inputs(years=2.5))
+            calculate(years(10), [employee(actual=-1)])
+
+    def test_start_year_must_be_positive_whole_number(self):
+        for bad in (0, -1, 1.5):
+            with self.assertRaises(ValueError):
+                calculate(years(10), [employee(start_year=bad)])
 
 
 if __name__ == "__main__":
