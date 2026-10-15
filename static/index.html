@@ -3,179 +3,118 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Deferred Salary Value Calculator</title>
+  <title>Deferred Salary Calculator</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="app">
     <header class="app__header">
-      <h1>Deferred Salary Compensation Calculator</h1>
+      <h1>Deferred Salary Calculator</h1>
       <p class="app__subtitle">
-        You accept a lower salary and the rest is deferred, paid only if the
-        startup succeeds. Over one or more years, this works out the
-        <strong>fair deferred pay-out</strong> the startup must promise so the
-        deal matches being paid each year and investing the money.
+        Employees are paid less than their fictional salary; the difference is
+        deferred. Set the startup's success probability for each year and add your
+        employees &ndash; the totals update as you type.
       </p>
     </header>
 
-    <main class="layout">
-      <!-- ------------------------------------------------------------ -->
-      <!-- Inputs                                                       -->
-      <!-- ------------------------------------------------------------ -->
-      <section class="card inputs" aria-label="Inputs">
-        <h2 class="card__title">Your numbers</h2>
-        <form id="calc-form" class="form">
-          <div class="field">
-            <label for="intended_gross">Intended annual gross salary</label>
-            <div class="input-wrap">
-              <span class="input-prefix">€</span>
-              <input type="number" id="intended_gross" name="intended_gross"
-                     min="0" step="1000" value="90000" required />
-            </div>
-            <small>Your real target salary — the full annual gross you should earn.</small>
+    <main>
+      <section class="inputs">
+        <div class="card" id="years-card">
+          <h2 class="card__title"><span class="step">1</span> Years &amp; success probability</h2>
+          <p class="hint">
+            Chance the startup succeeds in each year. The deferred salary of that
+            year is multiplied by it (e.g. 10% success = 90% risk of failure, so
+            only 10% of the deferred salary counts).
+          </p>
+          <div id="years-list" class="rows"></div>
+          <button type="button" id="add-year" class="btn btn--ghost">+ Add year</button>
+        </div>
+
+        <div class="card" id="employees-card">
+          <h2 class="card__title"><span class="step">2</span> Employees</h2>
+          <p class="hint">
+            Start year 1 means from the very beginning. The fictional and actual
+            salaries are annual gross and apply in every year from the start year on.
+          </p>
+          <div class="employee-grid employee-grid--head" aria-hidden="true">
+            <span>Name</span>
+            <span>Start year</span>
+            <span>Fictional salary</span>
+            <span>Actual salary</span>
+            <span></span>
           </div>
-
-          <div class="field">
-            <label for="actual_gross">Actual annual gross salary paid</label>
-            <div class="input-wrap">
-              <span class="input-prefix">€</span>
-              <input type="number" id="actual_gross" name="actual_gross"
-                     min="0" step="1000" value="60000" required />
-            </div>
-            <small>What the startup actually pays you per year (gross).</small>
-          </div>
-
-          <div class="field">
-            <label for="success_probability_pct">Startup success probability</label>
-            <div class="input-wrap">
-              <input type="number" id="success_probability_pct" name="success_probability_pct"
-                     min="1" max="100" step="1" value="20" required />
-              <span class="input-suffix">%</span>
-            </div>
-            <small>Chance the startup succeeds and pays the deferred salary. The only risk input. Lower odds require a larger pay-out (20% &rarr; 5&times;).</small>
-          </div>
-
-          <div class="field">
-            <label for="annual_return_pct">Expected annual investment return</label>
-            <div class="input-wrap">
-              <input type="number" id="annual_return_pct" name="annual_return_pct"
-                     min="-100" step="0.5" value="7" required />
-              <span class="input-suffix">%</span>
-            </div>
-            <small>Return you could earn if you invested the money instead (e.g. an index fund).</small>
-          </div>
-
-          <div class="field">
-            <label for="years">Number of years (deferral period)</label>
-            <div class="input-wrap">
-              <input type="number" id="years" name="years"
-                     min="1" step="1" value="1" required />
-              <span class="input-suffix">yr</span>
-            </div>
-            <small>How many years the same reduced salary is deferred. Earlier years' money compounds longer.</small>
-          </div>
-
-          <details class="assumptions-editor">
-            <summary>Advanced assumptions</summary>
-            <div class="field">
-              <label for="wage_tax_pct">Marginal wage/income tax</label>
-              <div class="input-wrap">
-                <input type="number" id="wage_tax_pct" name="wage_tax_pct"
-                       min="0" max="100" step="1" value="45" />
-                <span class="input-suffix">%</span>
-              </div>
-              <small>Top marginal tax rate on salary (default up to 45%).</small>
-            </div>
-            <div class="field">
-              <label for="capital_gains_tax_pct">Capital-gains tax</label>
-              <div class="input-wrap">
-                <input type="number" id="capital_gains_tax_pct" name="capital_gains_tax_pct"
-                       min="0" max="100" step="1" value="25" />
-                <span class="input-suffix">%</span>
-              </div>
-              <small>Tax on investment gains (default 25%).</small>
-            </div>
-          </details>
-
-          <button type="submit" class="btn">Calculate</button>
-          <p id="error" class="error" role="alert" hidden></p>
-        </form>
+          <div id="employees-list" class="rows"></div>
+          <button type="button" id="add-employee" class="btn btn--ghost">+ Add employee</button>
+        </div>
       </section>
 
-      <!-- ------------------------------------------------------------ -->
-      <!-- Results                                                      -->
-      <!-- ------------------------------------------------------------ -->
-      <section class="results" aria-label="Results">
-        <div class="tabs" role="tablist">
-          <button class="tab is-active" data-tab="summary" role="tab">Summary</button>
-          <button class="tab" data-tab="details" role="tab">Detailed calculation</button>
-        </div>
+      <p id="error" class="error" role="alert" hidden></p>
+      <div id="warnings" class="warnings" hidden></div>
 
-        <!-- Summary view -->
-        <div id="tab-summary" class="tab-panel is-active" role="tabpanel">
-          <div class="headline card">
-            <span class="headline__label">Required deferred compensation (gross, paid on success)</span>
-            <span id="headline-value" class="headline__value">—</span>
-            <span id="headline-note" class="headline__note"></span>
+      <section id="results" class="results" aria-label="Results" aria-live="polite">
+        <div class="totals">
+          <div class="total card">
+            <span class="total__label">Company: total deferred salary</span>
+            <span id="company-deferred" class="total__value">&ndash;</span>
+            <span class="total__note">Fictional minus actual salary, all employees, all years</span>
           </div>
-
-          <div class="summary-grid">
-            <div class="stat card">
-              <span class="stat__label">Deferred salary / year (gross)</span>
-              <span id="s-deferred" class="stat__value">—</span>
-            </div>
-            <div class="stat card">
-              <span id="s-total-label" class="stat__label">Total deferred (gross)</span>
-              <span id="s-total" class="stat__value">—</span>
-            </div>
-            <div class="stat card">
-              <span class="stat__label">Risk multiplier (1 / success)</span>
-              <span id="s-risk" class="stat__value">—</span>
-            </div>
-            <div class="stat card">
-              <span class="stat__label">Compensation multiple</span>
-              <span id="s-multiple" class="stat__value">—</span>
-            </div>
-          </div>
-
-          <div class="card compare">
-            <h3 class="card__title">Where the number comes from</h3>
-            <div class="compare__row">
-              <span>Net amount investable per year (after wage tax)</span>
-              <strong id="c-netinvest">—</strong>
-            </div>
-            <div class="compare__row">
-              <span>Foregone investment gains (after capital-gains tax)</span>
-              <strong id="c-foregone">—</strong>
-            </div>
-            <div class="compare__row">
-              <span>Tax advantage of gains vs. salary</span>
-              <strong id="c-taxadv">—</strong>
-            </div>
-            <div class="compare__row">
-              <span>Benchmark value if paid &amp; invested each year</span>
-              <strong id="c-benchmark">—</strong>
-            </div>
+          <div class="total total--accent card">
+            <span class="total__label">Company: deferred salary &times; risk factor</span>
+            <span id="company-risk" class="total__value">&ndash;</span>
+            <span class="total__note">Each year multiplied by that year's success probability</span>
           </div>
         </div>
 
-        <!-- Details view -->
-        <div id="tab-details" class="tab-panel" role="tabpanel" hidden>
-          <div class="card">
-            <h3 class="card__title">Step-by-step breakdown</h3>
-            <p class="muted">Every figure below shows its formula and the numbers plugged in.</p>
-            <ol id="steps" class="steps"></ol>
+        <div class="card">
+          <h2 class="card__title">Per employee</h2>
+          <div class="table-wrap">
+            <table id="employee-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th class="num">Start year</th>
+                  <th class="num">Deferred / year</th>
+                  <th class="num">Years</th>
+                  <th class="num">Total deferred</th>
+                  <th class="num">Deferred &times; risk</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+              <tfoot></tfoot>
+            </table>
           </div>
-          <div class="card">
-            <h3 class="card__title">Assumptions</h3>
-            <ul id="assumptions" class="assumptions"></ul>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Company per year</h2>
+          <div class="table-wrap">
+            <table id="year-table">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th class="num">Success probability</th>
+                  <th class="num">Employees</th>
+                  <th class="num">Deferred</th>
+                  <th class="num">Deferred &times; risk</th>
+                  <th class="num">Accumulated &times; risk</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+              <tfoot></tfoot>
+            </table>
           </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Employee breakdown by year</h2>
+          <p class="hint">Open an employee to see how their totals are built up year by year.</p>
+          <div id="breakdown"></div>
         </div>
       </section>
     </main>
 
     <footer class="app__footer">
-      <p>Runs locally. All calculations happen on your machine via a Python server.</p>
+      Runs locally. Salaries are annual gross amounts; no tax or investment effects are included.
     </footer>
   </div>
 

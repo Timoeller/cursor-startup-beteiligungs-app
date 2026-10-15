@@ -1,5 +1,5 @@
-"""Deferred-salary economic value application package."""
+"""Deferred-salary calculator package."""
 
-from .calculator import CalculationInputs, calculate
+from .calculator import EmployeeInput, YearInput, calculate
 
-__all__ = ["CalculationInputs", "calculate"]
+__all__ = ["EmployeeInput", "YearInput", "calculate"]
