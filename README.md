@@ -27,6 +27,21 @@ Run the tests:
 python3 -m unittest discover -s tests
 ```
 
+## Static web version (GitHub Pages)
+
+The `web/` folder contains the same calculator as a purely static site: the model
+is ported to JavaScript (`web/calculator.js`) and runs in the browser, so no server
+is needed and nothing you type leaves your machine.
+
+**Deploy on GitHub Pages:** in the repository go to *Settings -> Pages* and set
+*Source* to **GitHub Actions**. Every push to `main` then runs the JS tests
+(`node --test tests/*.test.js`) and publishes `web/` via
+`.github/workflows/pages.yml`. The site appears at
+`https://<user>.github.io/<repo>/`.
+
+**Elsewhere:** upload the `web/` folder to any static host (Netlify, Cloudflare
+Pages, S3, ...), or preview locally with `python3 -m http.server -d web`.
+
 ## How to use it
 
 1. **Years & success probability** – you start with one year. Enter the startup's
