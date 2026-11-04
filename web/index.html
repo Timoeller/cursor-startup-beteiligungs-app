@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deferred Salary Calculator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app__header">
+      <h1>Deferred Salary Calculator</h1>
+      <p class="app__subtitle">
+        Employees are paid less than their fictional salary; the difference is
+        deferred. Set the startup's success probability for each year and add your
+        employees &ndash; the totals update as you type.
+      </p>
+    </header>
+
+    <main>
+      <section class="inputs">
+        <div class="card" id="years-card">
+          <h2 class="card__title"><span class="step">1</span> Years &amp; success probability</h2>
+          <p class="hint">
+            Chance the startup succeeds in each year (must be above 0%). The
+            deferred salary of that year is divided by it to compensate for the
+            risk, e.g. 20% success means 5&times; the deferred salary.
+          </p>
+          <div id="years-list" class="rows"></div>
+          <button type="button" id="add-year" class="btn btn--ghost">+ Add year</button>
+        </div>
+
+        <div class="card" id="employees-card">
+          <h2 class="card__title"><span class="step">2</span> Employees</h2>
+          <p class="hint">
+            Start year 1 means from the very beginning. The fictional and actual
+            salaries are annual gross and apply in every year from the start year on.
+          </p>
+          <div class="employee-grid employee-grid--head" aria-hidden="true">
+            <span>Name</span>
+            <span>Start year</span>
+            <span>Fictional salary</span>
+            <span>Actual salary</span>
+            <span></span>
+          </div>
+          <div id="employees-list" class="rows"></div>
+          <button type="button" id="add-employee" class="btn btn--ghost">+ Add employee</button>
+        </div>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+      <div id="warnings" class="warnings" hidden></div>
+
+      <section id="results" class="results" aria-label="Results" aria-live="polite">
+        <div class="totals">
+          <div class="total card">
+            <span class="total__label">Company: total deferred salary</span>
+            <span id="company-deferred" class="total__value">&ndash;</span>
+            <span class="total__note">Fictional minus actual salary, all employees, all years</span>
+          </div>
+          <div class="total total--accent card">
+            <span class="total__label">Company: risk-adjusted deferred salary</span>
+            <span id="company-risk" class="total__value">&ndash;</span>
+            <span class="total__note">Each year divided by that year's success probability</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Per employee</h2>
+          <div class="table-wrap">
+            <table id="employee-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th class="num">Start year</th>
+                  <th class="num">Deferred / year</th>
+                  <th class="num">Years</th>
+                  <th class="num">Total deferred</th>
+                  <th class="num">Risk-adjusted</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+              <tfoot></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Company per year</h2>
+          <div class="table-wrap">
+            <table id="year-table">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th class="num">Success probability</th>
+                  <th class="num">Employees</th>
+                  <th class="num">Deferred</th>
+                  <th class="num">Risk-adjusted</th>
+                  <th class="num">Accumulated risk-adjusted</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+              <tfoot></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Employee breakdown by year</h2>
+          <p class="hint">Open an employee to see how their totals are built up year by year.</p>
+          <div id="breakdown"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app__footer">
+      Runs locally. Salaries are annual gross amounts; no tax or investment effects are included.
+    </footer>
+  </div>
+
+  <script src="calculator.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
